@@ -15,11 +15,6 @@ class Author_Posts_Widget extends WP_Widget
 		);
 	}
 
-	public function register_my_widget() {
-		error_log('func:' . __FUNCTION__ .'; '. print_r('register',true));
-		register_widget( $this );
-	}
-
 	/**
 	 * Front-end display of widget.
 	 *

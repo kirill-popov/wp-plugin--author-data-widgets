@@ -2,17 +2,25 @@
 
 namespace Secure_Author_Data_Plugin\Widgets;
 
+use Secure_Author_Data_Plugin\Widgets\Interfaces\Author_Secure_Data_Widget_Interface;
+use Secure_Author_Data_Plugin\Widgets\Notices\Notice;
 use WP_Widget;
 
-class Author_Posts_Widget extends WP_Widget
+class Author_Posts_Widget extends WP_Widget implements Author_Secure_Data_Widget_Interface
 {
+	use Notice;
+
     public function __construct() {
-		error_log('func:' . __FUNCTION__ .'; '. print_r('www',true));
 		parent::__construct(
 			'author_posts_widget', // Base ID
 			'Author_Posts_Widget', // Name
 			array( 'description' => __( 'A Foo Widget', 'secure-author-data' ) ) // Args
 		);
+
+		add_action('wp_ajax_widget_author_autocomplete', [$this, 'widget_author_autocomplete']);
+		add_action('wp_ajax_nopriv_widget_author_autocomplete', [$this, 'widget_author_autocomplete']);
+
+		add_action('admin_enqueue_scripts', [$this, 'admin_load_scripts']);
 	}
 
 	/**
@@ -23,16 +31,18 @@ class Author_Posts_Widget extends WP_Widget
 	 * @param array $args     Widget arguments.
 	 * @param array $instance Saved values from database.
 	 */
-	public function widget( $args, $instance ) {
-		extract( $args );
-		$title = apply_filters( 'widget_title', $instance['title'] );
+	public function widget( $args, $instance ): void
+	{
+		extract($args);
+		$title = apply_filters('widget_title', $instance['title']);
 		echo $before_widget;
-		if ( ! empty( $title ) ) {
+		if (!empty($title)) {
 			echo $before_title . $title . $after_title;
 		}
-		echo __( 'Hello, World!', 'text_domain' );
+		echo __('Hello, World!', 'secure-author-data');
 		echo $after_widget;
 	}
+
 	/**
 	 * Back-end widget form.
 	 *
@@ -40,17 +50,38 @@ class Author_Posts_Widget extends WP_Widget
 	 *
 	 * @param array $instance Previously saved values from database.
 	 */
-	public function form( $instance ) {
-		if ( isset( $instance['title'] ) ) {
-			$title = $instance['title'];
-		} else {
-			$title = __( 'New title', 'text_domain' );
+	public function form($instance): void
+	{
+		$author = isset($instance['author']) ? $instance['author'] : '';
+		$author_id = isset($instance['author_id']) ? $instance['author_id'] : '';
+		$message = isset($instance['message']) ? $instance['message'] : '';
+		$notice = $this->getNotice();
+
+		if (!empty($notice)) {
+			echo $notice;
 		}
 		?>
 		<p>
-			<label for="<?php echo $this->get_field_name( 'title' ); ?>"><?php _e( 'Title:' ); ?></label>
-			<input class="widefat" id="<?php echo $this->get_field_id( 'title' ); ?>" name="<?php echo $this->get_field_name( 'title' ); ?>" type="text" value="<?php echo esc_attr( $title ); ?>" />
-		 </p>
+			<label for="<?php echo $this->get_field_name('author');?>"><?php _e('Author:');?></label>
+			<input type="text" class="author-data-widget-author"
+			autocomplete="false"
+				name="<?php echo $this->get_field_name('author');?>"
+				id="<?php echo $this->get_field_id('author');?>"
+				value="<?php echo esc_attr($author);?>"
+			/>
+			<input type="hidden"
+				name="<?php echo $this->get_field_name('author_id');?>"
+				value="<?php echo esc_attr($author_id);?>"
+			>
+		</p>
+		<p>
+			<label for="<?php echo $this->get_field_name('message');?>"><?php _e('Message:');?></label>
+			<textarea
+				cols="30" rows="10"
+				name="<?php echo $this->get_field_name('message');?>"
+				id="<?php echo $this->get_field_id('message');?>"
+			><?php echo $message;?></textarea>
+		</p>
 		<?php
 	}
 	/**
@@ -63,9 +94,94 @@ class Author_Posts_Widget extends WP_Widget
 	 *
 	 * @return array Updated safe values to be saved.
 	 */
-	public function update( $new_instance, $old_instance ) {
-		$instance          = array();
-		$instance['title'] = ( ! empty( $new_instance['title'] ) ) ? strip_tags( $new_instance['title'] ) : '';
-		return $instance;
+	public function update($new_instance, $old_instance): array
+	{
+		$data = [
+			'author' 	=> (!empty($new_instance['author']) ? strip_tags($new_instance['author']) : ''),
+			'message' 	=> (!empty($new_instance['message']) ? strip_tags($new_instance['message']) : ''),
+		];
+
+		if (!empty($new_instance['author'])) {
+			if (!empty($new_instance['author_id']) && is_numeric($new_instance['author_id'])) {
+				$this->setSuccessNotice('Saved.');
+				$data['author_id'] = $new_instance['author_id'];
+			} else {
+				$this->setErrorNotice('Wrong Author. You have to select Author from the list.');
+				$data['author_id'] = !empty($old_instance['author_id']) ? $old_instance['author_id'] : '';
+			}
+		}
+		return $data;
+	}
+
+	public function admin_load_scripts(): void
+	{
+		$screen = get_current_screen();
+
+		if ('widgets' == $screen->id) {
+			wp_enqueue_script('widget_admin_script', plugin_dir_url(__FILE__) . 'js/script.js', array('jquery'));
+		}
+	}
+
+    public function load_styles(): void
+	{
+
+	}
+
+
+	function widget_author_autocomplete() {
+		$result = [];
+		$search = !empty($_POST['s']) ? esc_sql($_POST['s']) : '';
+
+		if (!empty($search)) {
+			$search = explode(' ', $search);
+
+			if (empty($search[1])) {
+				$meta_query = [
+					'relation' => 'OR',
+					[
+						'key'     => 'first_name',
+						'value'   => '^'.trim($search[0]),
+						'compare' => 'REGEXP'
+					],
+					[
+						'key'     => 'last_name',
+						'value'   => '^'.trim($search[0]),
+						'compare' => 'REGEXP'
+					]
+				];
+			} else {
+				$meta_query = [
+					'relation' => 'AND',
+					[
+						'key'     => 'first_name',
+						'value'   => '^'.trim($search[0]),
+						'compare' => 'REGEXP'
+					],
+					[
+						'key'     => 'last_name',
+						'value'   => '^'.trim($search[1]),
+						'compare' => 'REGEXP'
+					]
+				];
+			}
+
+			$args = [
+				'role' => 'Author',
+				'meta_query' => $meta_query,
+				'fields' => 'all_with_meta',
+				'orderby' => 'meta_value',
+				'meta_key' => 'first_name',
+			];
+
+			$users = get_users($args);
+			foreach ($users as $user) {
+				$result[] = [
+					'id' => $user->ID,
+					'name' => $user->first_name . ' ' . $user->last_name
+				];
+			}
+		}
+
+		wp_send_json($result);
 	}
 }

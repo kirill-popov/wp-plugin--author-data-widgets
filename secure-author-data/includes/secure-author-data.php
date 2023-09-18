@@ -2,8 +2,6 @@
 
 namespace Secure_Author_Data_Plugin;
 
-use Secure_Author_Data_Plugin\Widgets\Author_Posts_Widget;
-
 class Secure_Author_Data {
 
 	/**
@@ -84,11 +82,15 @@ class Secure_Author_Data {
 		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/secure-author-data-loader.php';
 		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/secure-author-data-widgets-loader.php';
 
-		// load widgets Classes
+		// load widgets Classes an Interfaces
+		$files = glob(plugin_dir_path( dirname( __FILE__ ) ) . 'includes/widgets/interfaces/*.php');
+		$this->load_files($files);
+
+		$files = glob(plugin_dir_path( dirname( __FILE__ ) ) . 'includes/widgets/traits/*.php');
+		$this->load_files($files);
+
 		$files = glob(plugin_dir_path( dirname( __FILE__ ) ) . 'includes/widgets/*.php');
-		foreach ($files as $file) {
-			require_once($file);
-		}
+		$this->load_files($files);
 
 		/**
 		 * The class responsible for defining internationalization functionality
@@ -99,7 +101,7 @@ class Secure_Author_Data {
 		/**
 		 * The class responsible for defining all actions that occur in the admin area.
 		 */
-		// require_once plugin_dir_path( dirname( __FILE__ ) ) . 'admin/class-plugin-name-admin.php';
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'admin/secure-author-data-admin.php';
 
 		/**
 		 * The class responsible for defining all actions that occur in the public-facing
@@ -108,6 +110,15 @@ class Secure_Author_Data {
 		// require_once plugin_dir_path( dirname( __FILE__ ) ) . 'public/class-plugin-name-public.php';
 
 		$this->loader = new Secure_Author_Data_Loader();
+	}
+
+	private function load_files(array $files): void
+	{
+		if (!empty($files)) {
+			foreach ($files as $file) {
+				require_once($file);
+			}
+		}
 	}
 
 	private function load_widgets() {

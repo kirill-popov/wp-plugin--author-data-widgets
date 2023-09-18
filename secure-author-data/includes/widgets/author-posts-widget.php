@@ -10,6 +10,8 @@ class Author_Posts_Widget extends WP_Widget implements Author_Secure_Data_Widget
 {
 	use Notice;
 
+	private $nonce_name;
+
     public function __construct() {
 		parent::__construct(
 			'author_posts_widget', // Base ID
@@ -17,10 +19,16 @@ class Author_Posts_Widget extends WP_Widget implements Author_Secure_Data_Widget
 			array( 'description' => __( 'A Foo Widget', 'secure-author-data' ) ) // Args
 		);
 
+		$this->nonce_name = $this->get_nonce_name();
+
 		add_action('wp_ajax_widget_author_autocomplete', [$this, 'widget_author_autocomplete']);
 		add_action('wp_ajax_nopriv_widget_author_autocomplete', [$this, 'widget_author_autocomplete']);
 
 		add_action('admin_enqueue_scripts', [$this, 'admin_load_scripts']);
+	}
+
+	private function get_nonce_name() {
+		return '_' . strtolower(get_class($this)) . '_nonce';
 	}
 
 	/**
@@ -37,6 +45,8 @@ class Author_Posts_Widget extends WP_Widget implements Author_Secure_Data_Widget
 		$title = apply_filters('widget_title', $instance['title']);
 		$author_id = apply_filters('widget_title', $instance['author_id']);
 		$message = apply_filters('widget_title', $instance['message']);
+		$author = null;
+
 		echo $before_widget;
 
 		if (!empty($title)) {
@@ -44,8 +54,8 @@ class Author_Posts_Widget extends WP_Widget implements Author_Secure_Data_Widget
 		}
 
 		if (!empty($author_id && is_numeric($author_id))) {
-			$user = get_user_by('ID', $author_id);
-			if ($user) {
+			$author = get_user_by('ID', $author_id);
+			if ($author) {
 				echo '<p>' . __('Posts count', 'secure-author-data') . ': ' . count_user_posts($author_id) . '</p>';
 			}
 		}
@@ -53,6 +63,19 @@ class Author_Posts_Widget extends WP_Widget implements Author_Secure_Data_Widget
 		if (!empty($message)) {
 			echo '<p>' . $message . '</p>';
 		}
+
+		/*
+		if ($author && is_user_logged_in()) {
+			?>
+			<form action="POST">
+				<input type="hidden" name="author_id" value="<?php echo $author_id;?>">
+				<textarea name="message" cols="30" rows="2"></textarea>
+				<input type="submit" value="Add message">
+			</form>
+			<?php
+		}
+		*/
+
 		echo $after_widget;
 	}
 
@@ -90,12 +113,13 @@ class Author_Posts_Widget extends WP_Widget implements Author_Secure_Data_Widget
 		<p>
 			<label for="<?php echo $this->get_field_name('message');?>"><?php _e('Message:');?></label>
 			<textarea
-				cols="30" rows="10"
+				cols="30" rows="3"
 				name="<?php echo $this->get_field_name('message');?>"
 				id="<?php echo $this->get_field_id('message');?>"
 			><?php echo $message;?></textarea>
 		</p>
 		<input type="hidden" name="<?php echo $this->get_field_name('title');?>" value="Secure Author Data">
+		<?php wp_nonce_field(get_class($this), $this->get_field_name($this->nonce_name));?>
 		<?php
 	}
 	/**
@@ -110,6 +134,12 @@ class Author_Posts_Widget extends WP_Widget implements Author_Secure_Data_Widget
 	 */
 	public function update($new_instance, $old_instance): array
 	{
+		if (!isset($new_instance[$this->nonce_name])
+		|| !wp_verify_nonce($new_instance[$this->nonce_name], get_class($this))) {
+			$this->setErrorNotice('Invalid nonce.');
+			return $old_instance;
+		}
+
 		$data = [
 			'title' 	=> (!empty($new_instance['title']) ? strip_tags($new_instance['title']) : ''),
 			'author' 	=> (!empty($new_instance['author']) ? strip_tags($new_instance['author']) : ''),

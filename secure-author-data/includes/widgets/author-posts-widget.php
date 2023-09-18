@@ -31,15 +31,28 @@ class Author_Posts_Widget extends WP_Widget implements Author_Secure_Data_Widget
 	 * @param array $args     Widget arguments.
 	 * @param array $instance Saved values from database.
 	 */
-	public function widget( $args, $instance ): void
+	public function widget($args, $instance): void
 	{
 		extract($args);
 		$title = apply_filters('widget_title', $instance['title']);
+		$author_id = apply_filters('widget_title', $instance['author_id']);
+		$message = apply_filters('widget_title', $instance['message']);
 		echo $before_widget;
+
 		if (!empty($title)) {
 			echo $before_title . $title . $after_title;
 		}
-		echo __('Hello, World!', 'secure-author-data');
+
+		if (!empty($author_id && is_numeric($author_id))) {
+			$user = get_user_by('ID', $author_id);
+			if ($user) {
+				echo '<p>' . __('Posts count', 'secure-author-data') . ': ' . count_user_posts($author_id) . '</p>';
+			}
+		}
+
+		if (!empty($message)) {
+			echo '<p>' . $message . '</p>';
+		}
 		echo $after_widget;
 	}
 
@@ -82,6 +95,7 @@ class Author_Posts_Widget extends WP_Widget implements Author_Secure_Data_Widget
 				id="<?php echo $this->get_field_id('message');?>"
 			><?php echo $message;?></textarea>
 		</p>
+		<input type="hidden" name="<?php echo $this->get_field_name('title');?>" value="Secure Author Data">
 		<?php
 	}
 	/**
@@ -97,6 +111,7 @@ class Author_Posts_Widget extends WP_Widget implements Author_Secure_Data_Widget
 	public function update($new_instance, $old_instance): array
 	{
 		$data = [
+			'title' 	=> (!empty($new_instance['title']) ? strip_tags($new_instance['title']) : ''),
 			'author' 	=> (!empty($new_instance['author']) ? strip_tags($new_instance['author']) : ''),
 			'message' 	=> (!empty($new_instance['message']) ? strip_tags($new_instance['message']) : ''),
 		];

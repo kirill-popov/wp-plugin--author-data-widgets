@@ -1,84 +1,81 @@
 (function( $ ) {
 	'use strict';
 
+	$(function() {
+		class Widget {
+			widgetElement;
+			widgetForm;
+			authorIDField;
+			authorIDFieldName = 'author_id';
+			messageField;
+			messageFieldName = 'message';
+			nonceField;
+			nonceFieldName = '_nonce';
+			messagesListElement;
+			submitButton;
 
-	function author_field_autocomplete_handler() {
-		let field_class = '.author-data-widget-author';
-		$('body').on('click', field_class, function() {
+			constructor(el) {
+				this.widgetElement = $(el);
+				this.widgetForm = this.widgetElement.find('.author-messages-form');
+				this.messagesListElement = this.widgetElement.find('.messages-list');
+				this.submitButton = this.widgetElement.find('input[type=submit]');
 
+				this.addFormSubmitHandler();
+			}
 
-		let autocomplete_field = $(field_class);
-		let boldStr = function(needle, haystack) {
-			let regex = new RegExp(needle, 'i');
-			return haystack.replace(regex, function(matched) {
-				return "<span style='font-weight:bold;'>" + matched + "</span>";
-			});
-		}
+			addFormSubmitHandler() {
+				this.messageField = this.widgetForm.find('[name='+this.messageFieldName+']');
+				this.authorIDField = this.widgetForm.find('[name='+this.authorIDFieldName+']');
+				this.nonceField = this.widgetForm.find('[name='+this.nonceFieldName+']');
 
-		if (autocomplete_field.length) {
-			autocomplete_field.each(function() {
-				let name_field = $(this);
+				this.widgetForm.on('submit', (e) => {
+					e.preventDefault();
+					this.sendMessage({
+						[this.messageFieldName]: this.messageField.val(),
+						[this.authorIDFieldName]: this.authorIDField.val(),
+						[this.nonceFieldName]: this.nonceField.val()
+					});
+				});
+			}
 
-				let id_field = name_field.next();
-				name_field.autocomplete({
-					source: function(request, response) {
-						let name_field_value = name_field.val();
-						$.ajax({
-							type: 'POST',
-							url: ajaxurl,
-							data: {
-								action: "widget_author_autocomplete",
-								s: name_field_value
-							},
-							success: function(data) {
-								if (data.length) {
-									response($.map(data, function(item) {
-										return {
-											label: item.name,
-											value: item.id
-										};
-									}));
-								} else {
-									response([{
-										label: "Nothing found",
-										value: ""
-									}]);
-								}
-							}
-						});
+			sendMessage(data) {
+				data.action = 'save_widget_author_messages';
+				$.ajax({
+					url: myajax.url,
+					type: 'POST',
+					data: data,
+					dataType: 'json',
+					beforeSend: () => {
+						this.submitButton.attr('disabled', 'disabled');
 					},
-					search: function(event, ui) {
-						id_field.val('');
-					},
-					select: function(event, ui) {
-						event.preventDefault();
-						let item = ui.item;
-						let user_id = parseInt(item.value);
-						if ("undefined" !== typeof id_field
-						&& Number.isInteger(user_id)) {
-							name_field.val(item.label);
-							id_field.val(item.value);
+					success: (resp) => {
+						if (resp.success) {
+							this.messageField.val('');
+							this.addMessage(data);
 						}
 					},
-					minLength: 1,
-				})
-				.autocomplete("instance")._renderItem = function(ul, item) {
-					let value = '';
-					if ('Nothing found' == item.label) {
-						value = item.label;
-					} else {
-						value = boldStr(name_field.val(), item.label);
+					complete: () => {
+						this.submitButton.removeAttr('disabled');
 					}
-					return $("<li>")
-					.append("<div>" + value + "</div>")
-					.appendTo(ul);
-				}
-			});
-		}
-		});
-	}
+				});
+			}
 
-	$(function() {
-		author_field_autocomplete_handler();
+			addMessage(data) {
+				this.messagesListElement.append('<li>'+data[this.messageFieldName]+'</li>');
+			}
+		};
+
+		let SecureAuthorDataWidgets = {
+			widgets: [],
+			classIdentifier: '.widget_author_posts_widget',
+
+			init: function() {
+				$('body').find(this.classIdentifier).each((index, el) => {
+					this.widgets.push(new Widget(el));
+				});
+			}
+		};
+
+		SecureAuthorDataWidgets.init();
 	});
 })(jQuery);

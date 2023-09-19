@@ -4,7 +4,8 @@ namespace Secure_Author_Data_Plugin\Widgets\Interfaces;
 
 interface Author_Secure_Data_Widget_Interface
 {
-    public function admin_load_scripts(): void;
+    public function load_admin_scripts(): void;
+    public function load_front_scripts(): void;
     public function load_styles(): void;
     public function widget($args, $instance): void;
     public function form($instance): void;

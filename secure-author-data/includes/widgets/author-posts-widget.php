@@ -2,6 +2,7 @@
 
 namespace Secure_Author_Data_Plugin\Widgets;
 
+use Exception;
 use Secure_Author_Data_Plugin\Widgets\Interfaces\Author_Secure_Data_Widget_Interface;
 use Secure_Author_Data_Plugin\Widgets\Notices\Notice;
 use WP_Widget;
@@ -11,24 +12,35 @@ class Author_Posts_Widget extends WP_Widget implements Author_Secure_Data_Widget
 	use Notice;
 
 	private $nonce_name;
+	private $front_nonce_name;
+	private $db_messages_key;
 
     public function __construct() {
 		parent::__construct(
 			'author_posts_widget', // Base ID
 			'Author_Posts_Widget', // Name
-			array( 'description' => __( 'A Foo Widget', 'secure-author-data' ) ) // Args
+			array( 'description' => __( 'Widget that displays Author\'s posts count and special message.', 'secure-author-data' ) ) // Args
 		);
 
 		$this->nonce_name = $this->get_nonce_name();
+		$this->front_nonce_name = $this->get_front_nonce_name();
+		$this->db_messages_key = 'secure_author_widget_messages';
 
 		add_action('wp_ajax_widget_author_autocomplete', [$this, 'widget_author_autocomplete']);
-		add_action('wp_ajax_nopriv_widget_author_autocomplete', [$this, 'widget_author_autocomplete']);
+		// add_action('wp_ajax_nopriv_widget_author_autocomplete', [$this, 'widget_author_autocomplete']);
+		add_action('wp_ajax_save_widget_author_messages', [$this, 'widget_author_message']);
+		// add_action('wp_ajax_nopriv_save_widget_author_messages', [$this, 'widget_author_message']);
 
-		add_action('admin_enqueue_scripts', [$this, 'admin_load_scripts']);
+		add_action('admin_enqueue_scripts', [$this, 'load_admin_scripts']);
+		add_action('wp_enqueue_scripts', [$this, 'load_front_scripts'], 99);
 	}
 
 	private function get_nonce_name() {
 		return '_' . strtolower(get_class($this)) . '_nonce';
+	}
+
+	private function get_front_nonce_name() {
+		return '_nonce';
 	}
 
 	/**
@@ -63,18 +75,35 @@ class Author_Posts_Widget extends WP_Widget implements Author_Secure_Data_Widget
 		if (!empty($message)) {
 			echo '<p>' . $message . '</p>';
 		}
-
-		/*
+		?>
+		<div class="messages-block">
+			<?php
+			$author_messages = get_user_meta($author_id, $this->db_messages_key, true);
+			?>
+			<h6>Messages:</h6>
+			<ul class="messages-list">
+				<?php
+				if (!empty($author_messages)) {
+					foreach ($author_messages as $msg) {
+						?>
+						<li><?php echo esc_html($msg);?></li>
+						<?php
+					}
+				}
+				?>
+			</ul>
+		</div>
+		<?php
 		if ($author && is_user_logged_in()) {
 			?>
-			<form action="POST">
+			<form action="POST" class="author-messages-form">
 				<input type="hidden" name="author_id" value="<?php echo $author_id;?>">
 				<textarea name="message" cols="30" rows="2"></textarea>
+				<input type="hidden" name="<?php echo $this->front_nonce_name;?>" value="<?php echo wp_create_nonce($this->front_nonce_name);?>">
 				<input type="submit" value="Add message">
 			</form>
 			<?php
 		}
-		*/
 
 		echo $after_widget;
 	}
@@ -141,35 +170,44 @@ class Author_Posts_Widget extends WP_Widget implements Author_Secure_Data_Widget
 		}
 
 		$data = [
-			'title' 	=> (!empty($new_instance['title']) ? strip_tags($new_instance['title']) : ''),
-			'author' 	=> (!empty($new_instance['author']) ? strip_tags($new_instance['author']) : ''),
-			'message' 	=> (!empty($new_instance['message']) ? strip_tags($new_instance['message']) : ''),
+			'title' => (!empty($new_instance['title']) ? strip_tags($new_instance['title']) : ''),
+			'author' => (!empty($new_instance['author']) ? strip_tags($new_instance['author']) : ''),
+			'message' => (!empty($new_instance['message']) ? strip_tags($new_instance['message']) : ''),
 		];
 
 		if (!empty($new_instance['author'])) {
 			if (!empty($new_instance['author_id']) && is_numeric($new_instance['author_id'])) {
-				$this->setSuccessNotice('Saved.');
 				$data['author_id'] = $new_instance['author_id'];
+				$this->setSuccessNotice('Saved.');
 			} else {
-				$this->setErrorNotice('Wrong Author. You have to select Author from the list.');
 				$data['author_id'] = !empty($old_instance['author_id']) ? $old_instance['author_id'] : '';
+				$this->setErrorNotice('Wrong Author. You have to select Author from the list.');
 			}
 		}
 		return $data;
 	}
 
-	public function admin_load_scripts(): void
+	public function load_admin_scripts(): void
 	{
 		$screen = get_current_screen();
 
 		if ('widgets' == $screen->id) {
-			wp_enqueue_script('widget_admin_script', plugin_dir_url(__FILE__) . 'js/script.js', array('jquery'));
+			wp_enqueue_script('widget_admin_script', plugin_dir_url(__FILE__) . 'js/admin_script.js', array('jquery'));
 		}
+	}
+
+	public function load_front_scripts(): void
+	{
+		wp_enqueue_script('widget_script', plugin_dir_url(__FILE__) . 'js/script.js', array('jquery'));
+		wp_localize_script('widget_script', 'myajax',
+			[
+				'url' => admin_url('admin-ajax.php')
+			]
+		);
 	}
 
     public function load_styles(): void
 	{
-
 	}
 
 
@@ -225,6 +263,47 @@ class Author_Posts_Widget extends WP_Widget implements Author_Secure_Data_Widget
 					'name' => $user->first_name . ' ' . $user->last_name
 				];
 			}
+		}
+
+		wp_send_json($result);
+	}
+
+	function widget_author_message() {
+		$result = [
+			'success' => false,
+			'message' => '',
+		];
+
+		try {
+			if (empty($_POST[$this->front_nonce_name])
+			|| !wp_verify_nonce($_POST[$this->front_nonce_name], $this->front_nonce_name)) {
+				throw new Exception("Invalid nonce.");
+			}
+
+			if (empty($_POST['author_id'])
+			|| !is_numeric($_POST['author_id'])) {
+				throw new Exception("Wrong Author ID value.");
+			}
+
+			if (empty($_POST['message'])) {
+				throw new Exception("Empty message.");
+			}
+
+			$user = get_user_by('ID', $_POST['author_id']);
+			if (!$user) {
+				throw new Exception("User not found.");
+			}
+
+			$widget_messages = get_user_meta($_POST['author_id'], $this->db_messages_key, true);
+			$widget_messages = !empty($widget_messages) ? $widget_messages : [];
+			$widget_messages[] = esc_sql($_POST['message']);
+			update_user_meta($_POST['author_id'], $this->db_messages_key, $widget_messages);
+
+			$result['success'] = true;
+			$result['message'] = 'Saved.';
+
+		} catch (Exception $e) {
+			$result['message'] = $e->getMessage();
 		}
 
 		wp_send_json($result);
